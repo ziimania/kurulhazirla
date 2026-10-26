@@ -10,6 +10,78 @@ import datetime
 
 st.set_page_config(page_title="İSG Kurul Tutanağı Otomasyonu", page_icon="📋", layout="wide")
 
+# ================= MODERN CAM EFEKTİ (GLASSMORPHISM) CSS =================
+st.markdown("""
+<style>
+    /* Genel Arka Plan */
+    .stApp {
+        background: linear-gradient(135deg, #f8fafc 0%, #edf2f7 50%, #e2e8f0 100%);
+    }
+
+    /* Cam Efekti Kartlar (Formlar, Expanderlar, Kart Blokları) */
+    [data-testid="stForm"], div[data-testid="stExpander"] {
+        background: rgba(255, 255, 255, 0.72) !important;
+        backdrop-filter: blur(14px) !important;
+        -webkit-backdrop-filter: blur(14px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.85) !important;
+        border-radius: 14px !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03) !important;
+        padding: 16px !important;
+    }
+
+    /* Girdi Alanları (Inputs & Textareas) */
+    .stTextInput > div > div > input, 
+    .stTextArea > div > div > textarea,
+    .stDateInput > div > div > input {
+        background: rgba(255, 255, 255, 0.9) !important;
+        border: 1px solid rgba(203, 213, 225, 0.8) !important;
+        border-radius: 8px !important;
+        font-size: 0.9rem !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    .stTextInput > div > div > input:focus, 
+    .stTextArea > div > div > textarea:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+        background: #ffffff !important;
+    }
+
+    /* Etiket boşluklarını daraltma */
+    .stTextInput label, .stTextArea label, .stDateInput label {
+        margin-bottom: 2px !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        color: #334155 !important;
+    }
+
+    /* Düğmeler */
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+        border: none !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+
+    button[kind="primary"]:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35) !important;
+    }
+
+    /* Kırmızı Uyarı Alanı Çerçevesi */
+    .durum-alert-box {
+        border: 2px solid #ef4444;
+        background: rgba(254, 242, 242, 0.85);
+        backdrop-filter: blur(8px);
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-top: 6px;
+        margin-bottom: 6px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 AYLAR_TR = {
     1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan",
     5: "Mayıs", 6: "Haziran", 7: "Temmuz", 8: "Ağustos",
@@ -155,7 +227,6 @@ def parse_kurul_docx(file_bytes):
             "use_bullets": has_bullets
         })
 
-    # Karar 2 dışındaki, sondaki 2 kapanış maddesine kadar olan tüm kararlar devredenlerdir
     devredenler = blocks[1:-2] if len(blocks) > 3 else []
     if not devredenler and len(blocks) >= 1:
         devredenler = [blocks[0]]
@@ -185,7 +256,6 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
     for tr in t1_trs[4:]:
         t1._tbl.remove(tr)
 
-    # Devreden kararlar B. Gündem tablosunda tekrar listelenmez, sadece yeni eklenen kararlar girer
     for yk in yeni_kararlar_list:
         new_tr = copy.deepcopy(agenda_row_template)
         set_tc_text_preserve_style(new_tr.tc_lst[1], yk["konu"].strip(), bold=False)
@@ -231,7 +301,7 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
         for r in rows:
             t3._tbl.append(r)
 
-    # GEÇEN AYDAN DEVREDEN KARARLAR (HER BİRİ AYRI 7 SATIRLIK BLOK, SIRA=2, NO=YYYY-AA/002, KONU=Gündem 2. [Konu])
+    # GEÇEN AYDAN DEVREDENLER: Her biri ayrı blok, Sıra=2, No=YYYY-AA/002, Konu=Gündem 2. [Konu]
     for dk in devreden_list:
         konu_clean = re.sub(r'^Gündem\s*\d+\.\s*', '', dk["konu"].strip(), flags=re.IGNORECASE)
         gundem_konu_str = f"Gündem 2. {konu_clean}"
@@ -250,7 +320,7 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
 
     current_sira = 3
 
-    # YENİ EKLENEN KARARLAR (SIRA 3'TEN BAŞLAR: Gündem 3., Gündem 4...)
+    # YENİ KARARLAR: Sıra 3'ten başlar
     for yk in yeni_kararlar_list:
         konu_clean = re.sub(r'^Gündem\s*\d+\.\s*', '', yk["konu"].strip(), flags=re.IGNORECASE)
         gundem_konu_str = f"Gündem {current_sira}. {konu_clean}"
@@ -290,9 +360,8 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
 
 # ================= STREAMLIT ARAYÜZÜ =================
 st.title("📋 İSG Kurul Tutanağı Otomasyonu")
-st.markdown("Önceki ayın `.docx` tutanağını yükleyin, **Yeni Kurul Tarihini** seçin ve yeni kararları ekleyin.")
 
-uploaded_file = st.file_uploader("1️⃣ Önceki Ayın İSG Kurul Tutanağını Yükleyin (.docx)", type=["docx"])
+uploaded_file = st.file_uploader("Önceki Ayın İSG Kurul Tutanağını Yükleyin (.docx)", type=["docx"])
 
 if uploaded_file is not None:
     file_bytes = uploaded_file.getvalue()
@@ -304,46 +373,45 @@ if uploaded_file is not None:
         st.session_state.yeni_kararlar = []
 
     parsed = st.session_state.parsed_data
-    st.success(f"✅ Yüklendi: **{uploaded_file.name}** | Önceki Toplantı No: `{parsed['eski_no']}`")
+    st.success(f"✅ Yüklendi: **{uploaded_file.name}** | Önceki Dönem: `{parsed['eski_no']}` ({parsed['eski_tarih_str']})")
 
-    st.markdown("---")
-    st.subheader("2️⃣ Yeni Kurul Tarihi ve Dönem Bilgisi")
+    st.markdown("##### 📅 Yeni Kurul Tarihi ve Dönem")
     col_d1, col_d2, col_d3 = st.columns(3)
 
     secilen_tarih = col_d1.date_input(
-        "Yeni Kurul Toplantı Tarihi Seçin",
+        "Yeni Kurul Tarihi",
         value=parsed["default_next_date"],
         format="DD.MM.YYYY"
     )
     otomatik_donem = f"{secilen_tarih.year}-{secilen_tarih.month:02d}"
-    yeni_donem = col_d2.text_input("Yeni Toplantı No (Otomatik)", value=otomatik_donem)
-    yeni_tarih_str = col_d3.text_input("Belgede Görünecek Tarih", value=secilen_tarih.strftime("%d.%m.%Y"))
+    yeni_donem = col_d2.text_input("Yeni Toplantı No", value=otomatik_donem)
+    yeni_tarih_str = col_d3.text_input("Belgedeki Tarih", value=secilen_tarih.strftime("%d.%m.%Y"))
     ay_ismi = AYLAR_TR.get(secilen_tarih.month, "")
 
-    st.markdown("---")
-    st.subheader("3️⃣ Önceki Kuruldan Devreden Kararlar (Gündem 2 Altında Ayrı Ayrı Gösterilecek)")
-    st.caption("Aşağıdaki kararların her biri tutanakta ayrı ayrı Karar 2 tablosu olarak yer alacaktır. Lütfen mevcut durumlarını güncelleyin.")
-
+    # ÖNCEKİ KURULDAN DEVREDENLER
+    st.markdown("##### 📌 Gözden Geçirilecek Kararlar (Geçen Aydan Devreden)")
     degismeyen_var = False
     updated_devreden = []
 
     for idx, dk in enumerate(st.session_state.devreden_kararlar):
-        with st.expander(f"📌 Devreden Karar: {dk['konu']}", expanded=True):
+        with st.expander(f"📌 Karar 2 ({yeni_donem}/002): {dk['konu']}", expanded=True):
             d_konu = st.text_input("Konu", value=dk["konu"], key=f"dk_konu_{idx}")
-            d_gerekce = st.text_area("Gerekçe", value=dk["gerekce"], height=70, key=f"dk_ger_{idx}")
-            d_karar = st.text_area("Alınan Karar / Uygulama", value=dk["karar"], height=120, key=f"dk_kar_{idx}")
             
-            # KIRMIZI ÇERÇEVELİ VE DİKKAT ÇEKİCİ MEVCUT DURUM ALANI
+            c_txt1, c_txt2 = st.columns(2)
+            d_gerekce = c_txt1.text_area("Gerekçe", value=dk["gerekce"], height=65, key=f"dk_ger_{idx}")
+            d_karar = c_txt2.text_area("Alınan Karar / Uygulama", value=dk["karar"], height=65, key=f"dk_kar_{idx}")
+
+            # Kırmızı çerçeveli uyarı kutusu
             st.markdown("""
-            <div style="border: 2px solid #dc2626; background-color: #fef2f2; border-radius: 8px; padding: 10px; margin-top: 10px; margin-bottom: 5px;">
-                <b style="color: #b91c1c;">⚠️ DİKKAT: Mevcut Durumu Güncelleyin!</b>
+            <div class="durum-alert-box">
+                <b style="color: #b91c1c; font-size: 0.85rem;">⚠️ DİKKAT: Mevcut Durumu Güncelleyin!</b>
             </div>
             """, unsafe_allow_html=True)
-            
-            c1, c2, c3 = st.columns(3)
+
+            c1, c2, c3 = st.columns([2, 1.2, 1.8])
             default_durum_val = "Kurul Kararı Daireye İletildi" if dk["durum"] == "Uygulama sonucu bekleniyor." else dk["durum"]
             d_durum = c1.text_input("Mevcut Durum", value=default_durum_val, key=f"dk_dur_{idx}")
-            
+
             if d_durum.strip() == "Uygulama sonucu bekleniyor.":
                 degismeyen_var = True
 
@@ -360,21 +428,27 @@ if uploaded_file is not None:
             })
 
     if degismeyen_var:
-        st.error("🚨 **Mevcut durumu değiştirmeyecek misin?** Geçen ayki kararın durumu hâlâ 'Uygulama sonucu bekleniyor.' olarak kalmış görünüyor! Lütfen kontrol edin.")
+        st.error("🚨 **Mevcut durumu değiştirmeyecek misin?** Geçen ayki kararın durumu hâlâ 'Uygulama sonucu bekleniyor.' olarak kalmış! Lütfen kontrol edin.")
 
-    st.markdown("---")
-    st.subheader("4️⃣ Yeni Karar Ekle (Gündem 3 ve Sonrasından Başlayacak)")
-
+    # KOMPAKT YENİ KARAR EKLEME FORMU
+    st.markdown("##### ➕ Yeni Karar Ekle (Gündem 3 ve Sonrasından Başlayacak)")
     with st.form("yeni_karar_ekle_form", clear_on_submit=True):
-        yk_konu = st.text_input("Yeni Karar Konusu")
-        yk_gerekce = st.text_area("Gerekçe", height=70)
-        yk_karar = st.text_area("Alınan Karar / Uygulama", height=120)
-        fc1, fc2, fc3 = st.columns(3)
+        # 1. Satır: Konu
+        yk_konu = st.text_input("Yeni Karar Konusu", placeholder="Örn: Yağışlı Havalarda Elektrik Tesisatı ve Ekipman Risklerinin Önlenmesi")
+        
+        # 2. Satır: Yan Yana Kompakt Gerekçe ve Karar
+        col_txt1, col_txt2 = st.columns(2)
+        yk_gerekce = col_txt1.text_area("Gerekçe", height=70, placeholder="Kararın gerekçesini yazın...")
+        yk_karar = col_txt2.text_area("Alınan Karar / Uygulama", height=70, placeholder="Alınan karar maddelerini yazın...")
+        
+        # 3. Satır: Durum, Termin, Sorumlu ve Ekle Butonu
+        fc1, fc2, fc3, fc4 = st.columns([1.8, 1.2, 1.8, 1.2])
         yk_durum = fc1.text_input("Mevcut Durum", value="Uygulama sonucu bekleniyor.")
         yk_termin = fc2.text_input("Termin", value="İvedilikle")
         yk_sorumlu = fc3.text_input("Sorumlu Kişi", value="Üst İşveren")
-
-        submitted = st.form_submit_button("➕ Yeni Kararı Listeye Ekle")
+        
+        fc4.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+        submitted = fc4.form_submit_button("➕ Karar Ekle", use_container_width=True)
         if submitted:
             if yk_konu.strip():
                 st.session_state.yeni_kararlar.append({
@@ -387,20 +461,24 @@ if uploaded_file is not None:
                 })
                 st.rerun()
 
+    # Eklenen yeni kararların listesi
     updated_yeni_kararlar = []
     if st.session_state.yeni_kararlar:
-        st.markdown("#### Eklenen Yeni Kararlar:")
         for y_idx, yk in enumerate(st.session_state.yeni_kararlar):
             sira_no = 3 + y_idx
-            with st.expander(f"🆕 Gündem {sira_no} ({yeni_donem}/{sira_no:03d}): {yk['konu']}", expanded=True):
+            with st.expander(f"🆕 Karar {sira_no} ({yeni_donem}/{sira_no:03d}): {yk['konu']}", expanded=True):
                 e_konu = st.text_input("Konu", value=yk["konu"], key=f"yk_konu_{y_idx}")
-                e_gerekce = st.text_area("Gerekçe", value=yk["gerekce"], height=70, key=f"yk_ger_{y_idx}")
-                e_karar = st.text_area("Alınan Karar / Uygulama", value=yk["karar"], height=120, key=f"yk_kar_{y_idx}")
-                ec1, ec2, ec3, ec4 = st.columns([2, 2, 2, 1])
+                ec_txt1, ec_txt2 = st.columns(2)
+                e_gerekce = ec_txt1.text_area("Gerekçe", value=yk["gerekce"], height=65, key=f"yk_ger_{y_idx}")
+                e_karar = ec_txt2.text_area("Alınan Karar / Uygulama", value=yk["karar"], height=65, key=f"yk_kar_{y_idx}")
+                
+                ec1, ec2, ec3, ec4 = st.columns([1.8, 1.2, 1.8, 1.2])
                 e_durum = ec1.text_input("Mevcut Durum", value=yk["durum"], key=f"yk_dur_{y_idx}")
                 e_termin = ec2.text_input("Termin", value=yk["termin"], key=f"yk_ter_{y_idx}")
                 e_sorumlu = ec3.text_input("Sorumlu Kişi", value=yk["sorumlu"], key=f"yk_sor_{y_idx}")
-                if ec4.button("🗑️ Sil", key=f"yk_del_{y_idx}"):
+                
+                ec4.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+                if ec4.button("🗑️ Sil", key=f"yk_del_{y_idx}", use_container_width=True):
                     st.session_state.yeni_kararlar.pop(y_idx)
                     st.rerun()
 
@@ -413,7 +491,8 @@ if uploaded_file is not None:
                     "sorumlu": e_sorumlu
                 })
 
-    st.markdown("---")
+    # Çıktı Alma Alanı
+    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
     output_docx = build_updated_kurul_docx(
         file_bytes,
         yeni_donem.strip(),
