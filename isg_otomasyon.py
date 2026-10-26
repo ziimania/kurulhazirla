@@ -155,6 +155,7 @@ def parse_kurul_docx(file_bytes):
             "use_bullets": has_bullets
         })
 
+    # Karar 2 dışındaki, sondaki 2 kapanış maddesine kadar olan tüm kararlar devredenlerdir
     devredenler = blocks[1:-2] if len(blocks) > 3 else []
     if not devredenler and len(blocks) >= 1:
         devredenler = [blocks[0]]
@@ -184,6 +185,7 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
     for tr in t1_trs[4:]:
         t1._tbl.remove(tr)
 
+    # Devreden kararlar B. Gündem tablosunda tekrar listelenmez, sadece yeni eklenen kararlar girer
     for yk in yeni_kararlar_list:
         new_tr = copy.deepcopy(agenda_row_template)
         set_tc_text_preserve_style(new_tr.tc_lst[1], yk["konu"].strip(), bold=False)
@@ -211,9 +213,9 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
     for tr in t3_trs:
         t3._tbl.remove(tr)
 
-    def append_decision_block(sira_no, karar_no_str, gundem_konu_str, gerekce_str, karar_lines, durum_str, termin_str, sorumlu_str, use_bullets=False):
+    def append_decision_block(sira_val, karar_no_str, gundem_konu_str, gerekce_str, karar_lines, durum_str, termin_str, sorumlu_str, use_bullets=False):
         rows = [copy.deepcopy(r) for r in template_block_rows]
-        set_tc_text_preserve_style(rows[0].tc_lst[0], str(sira_no), bold=True)
+        set_tc_text_preserve_style(rows[0].tc_lst[0], str(sira_val), bold=True)
         set_tc_text_preserve_style(rows[0].tc_lst[2], karar_no_str, bold=True)
         set_tc_text_preserve_style(rows[2].tc_lst[1], gundem_konu_str, bold=True)
         set_tc_text_preserve_style(rows[2].tc_lst[2], gerekce_str, bold=False)
@@ -229,41 +231,39 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
         for r in rows:
             t3._tbl.append(r)
 
-    # TÜM GEÇEN AY KARARLARI GÜNDEM 2 ÇATISI ALTINDA BİRLEŞTİRİLİYOR (KARAR 2)
-    devreden_ozet_parcalar = []
-    devreden_gerekce_birlestir = []
+    # GEÇEN AYDAN DEVREDEN KARARLAR (HER BİRİ AYRI 7 SATIRLIK BLOK, SIRA=2, NO=YYYY-AA/002, KONU=Gündem 2. [Konu])
     for dk in devreden_list:
-        devreden_ozet_parcalar.append(f"• Konu: {dk['konu']}\n  Durum: {dk['durum']}\n  Detay: {dk['karar']}")
-        if dk['gerekce']:
-            devreden_gerekce_birlestir.append(dk['gerekce'])
-
-    birlestirilmis_karar_metni = "\n\n".join(devreden_ozet_parcalar)
-    birlestirilmis_gerekce = " ".join(devreden_gerekce_birlestir) if devreden_gerekce_birlestir else "Bir önceki İSG kurul toplantısında alınan kararların takibi ve gözden geçirilmesi."
-
-    karar2_no = f"{yeni_donem}/002"
-    append_decision_block(
-        sira_no=2,
-        karar_no_str=karar2_no,
-        gundem_konu_str="Gündem 2. Bir önceki kurulda alınmış kararların gözden geçirilmesi",
-        gerekce_str=birlestirilmis_gerekce,
-        karar_lines=birlestirilmis_karar_metni.split("\n"),
-        durum_str="Gözden Geçirildi / Takip Ediliyor",
-        termin_str="Sürekli",
-        sorumlu_str="İlgili Sorumlular",
-        use_bullets=True
-    )
+        konu_clean = re.sub(r'^Gündem\s*\d+\.\s*', '', dk["konu"].strip(), flags=re.IGNORECASE)
+        gundem_konu_str = f"Gündem 2. {konu_clean}"
+        lines = dk["karar"].split("\n")
+        append_decision_block(
+            sira_val=2,
+            karar_no_str=f"{yeni_donem}/002",
+            gundem_konu_str=gundem_konu_str,
+            gerekce_str=dk["gerekce"],
+            karar_lines=lines,
+            durum_str=dk["durum"],
+            termin_str=dk["termin"],
+            sorumlu_str=dk["sorumlu"],
+            use_bullets=dk.get("use_bullets", len(lines) > 1)
+        )
 
     current_sira = 3
 
-    # Yeni Eklenen Kararlar Gündem 3 ve sonrasından başlar
+    # YENİ EKLENEN KARARLAR (SIRA 3'TEN BAŞLAR: Gündem 3., Gündem 4...)
     for yk in yeni_kararlar_list:
-        karar_no_str = f"{yeni_donem}/{current_sira:03d}"
         konu_clean = re.sub(r'^Gündem\s*\d+\.\s*', '', yk["konu"].strip(), flags=re.IGNORECASE)
         gundem_konu_str = f"Gündem {current_sira}. {konu_clean}"
         lines = yk["karar"].split("\n")
         append_decision_block(
-            current_sira, karar_no_str, gundem_konu_str,
-            yk["gerekce"], lines, yk["durum"], yk["termin"], yk["sorumlu"],
+            sira_val=current_sira,
+            karar_no_str=f"{yeni_donem}/{current_sira:03d}",
+            gundem_konu_str=gundem_konu_str,
+            gerekce_str=yk["gerekce"],
+            karar_lines=lines,
+            durum_str=yk["durum"],
+            termin_str=yk["termin"],
+            sorumlu_str=yk["sorumlu"],
             use_bullets=yk.get("use_bullets", len(lines) > 1)
         )
         current_sira += 1
@@ -321,31 +321,31 @@ if uploaded_file is not None:
     ay_ismi = AYLAR_TR.get(secilen_tarih.month, "")
 
     st.markdown("---")
-    st.subheader("3️⃣ Önceki Kuruldan Devreden Kararlar (Gündem 2 Altında Birleştirilecek)")
-    st.markdown("""
-    > ⚠️ **Not:** Geçen ay alınan tüm kararlar yeni ayda **Gündem 2 (Bir önceki kurulda alınmış kararların gözden geçirilmesi)** maddesi altında tek bir karar olarak birleştirilecektir. Lütfen mevcut durumlarını güncelleyin!
-    """)
+    st.subheader("3️⃣ Önceki Kuruldan Devreden Kararlar (Gündem 2 Altında Ayrı Ayrı Gösterilecek)")
+    st.caption("Aşağıdaki kararların her biri tutanakta ayrı ayrı Karar 2 tablosu olarak yer alacaktır. Lütfen mevcut durumlarını güncelleyin.")
 
-    # Değiştirilmemiş durum kontrolü için uyarı bayrağı
-    uyari_goster = False
-
+    degismeyen_var = False
     updated_devreden = []
+
     for idx, dk in enumerate(st.session_state.devreden_kararlar):
-        with st.expander(f"📌 Geçen Ayın Kararı: {dk['konu']}", expanded=True):
+        with st.expander(f"📌 Devreden Karar: {dk['konu']}", expanded=True):
             d_konu = st.text_input("Konu", value=dk["konu"], key=f"dk_konu_{idx}")
             d_gerekce = st.text_area("Gerekçe", value=dk["gerekce"], height=70, key=f"dk_ger_{idx}")
             d_karar = st.text_area("Alınan Karar / Uygulama", value=dk["karar"], height=120, key=f"dk_kar_{idx}")
             
-            c1, c2, c3 = st.columns(3)
+            # KIRMIZI ÇERÇEVELİ VE DİKKAT ÇEKİCİ MEVCUT DURUM ALANI
+            st.markdown("""
+            <div style="border: 2px solid #dc2626; background-color: #fef2f2; border-radius: 8px; padding: 10px; margin-top: 10px; margin-bottom: 5px;">
+                <b style="color: #b91c1c;">⚠️ DİKKAT: Mevcut Durumu Güncelleyin!</b>
+            </div>
+            """, unsafe_allow_html=True)
             
-            # DİKKAT ÇEKİCİ KIRMIZI ÇERÇEVE ALANI İÇİN ÖZEL UYARI KUTUSU
-            st.markdown("🔴 **Mevcut Durum (Güncellemeniz Gerekiyor):**")
+            c1, c2, c3 = st.columns(3)
             default_durum_val = "Kurul Kararı Daireye İletildi" if dk["durum"] == "Uygulama sonucu bekleniyor." else dk["durum"]
             d_durum = c1.text_input("Mevcut Durum", value=default_durum_val, key=f"dk_dur_{idx}")
             
-            # Eğer kullanıcı mevcut durumu "Uygulama sonucu bekleniyor." olarak bırakmışsa uyarı verelim
             if d_durum.strip() == "Uygulama sonucu bekleniyor.":
-                uyari_goster = True
+                degismeyen_var = True
 
             d_termin = c2.text_input("Termin", value=dk["termin"], key=f"dk_ter_{idx}")
             d_sorumlu = c3.text_input("Sorumlu Kişi", value=dk["sorumlu"], key=f"dk_sor_{idx}")
@@ -359,8 +359,8 @@ if uploaded_file is not None:
                 "sorumlu": d_sorumlu
             })
 
-    if uyari_goster:
-        st.error("🚨 **DİKKAT:** Geçen ayki kararların bazıフラン/Mevcut Durum kısımları 'Uygulama sonucu bekleniyor.' olarak kalmış! Düzeltilmeden onay verilirse bu şekilde işlenecek. Değiştirmek ister misiniz?")
+    if degismeyen_var:
+        st.error("🚨 **Mevcut durumu değiştirmeyecek misin?** Geçen ayki kararın durumu hâlâ 'Uygulama sonucu bekleniyor.' olarak kalmış görünüyor! Lütfen kontrol edin.")
 
     st.markdown("---")
     st.subheader("4️⃣ Yeni Karar Ekle (Gündem 3 ve Sonrasından Başlayacak)")
