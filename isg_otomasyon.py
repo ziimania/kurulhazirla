@@ -104,13 +104,12 @@ def set_tc_multiline_decision(tc, lines, template_p_intro, template_p_bullet):
         tc.append(new_p)
 
 def parse_kurul_docx(file_bytes):
-    """Önceki ayın Word dosyasını okur; tarih, dönem ve devredecek kararları çıkarır."""
+    """Önceki ayın Word dosyasını okur; tarih, dönem ve devredecek tüm kararları çıkarır."""
     doc = docx.Document(io.BytesIO(file_bytes))
     t0 = doc.tables[0]
     eski_no = get_tc_text(t0._tbl.tr_lst[0].tc_lst[1], t0).strip()
     eski_tarih_str = get_tc_text(t0._tbl.tr_lst[0].tc_lst[3], t0).strip()
 
-    # Eski tarihten bir sonraki ayı otomatik hesapla
     default_next_date = datetime.date.today()
     try:
         parts = eski_tarih_str.split(".")
@@ -124,7 +123,6 @@ def parse_kurul_docx(file_bytes):
     except Exception:
         pass
 
-    # Tablo 3 içindeki 7'şer satırlık karar bloklarını ayrıştır
     t3 = doc.tables[3]
     trs = t3._tbl.tr_lst
     num_blocks = len(trs) // 7
@@ -141,7 +139,6 @@ def parse_kurul_docx(file_bytes):
         termin = get_tc_text(trs[base + 6].tc_lst[2], t3)
         sorumlu = get_tc_text(trs[base + 6].tc_lst[3], t3)
 
-        # Orijinal hücrede madde işareti (numPr) olup olmadığını kontrol et
         has_bullets = False
         p_lst = trs[base + 4].tc_lst[1].p_lst
         if len(p_lst) > 1:
@@ -164,10 +161,9 @@ def parse_kurul_docx(file_bytes):
 
     # Blok 0 -> Eski Karar 2 (Silinecek)
     # Son 2 Blok -> Kapanış maddeleri (Gündeme alınması talep edilen konular & Dilek ve Temenniler)
-    # Aradaki bloklar (blocks[1:-2]) -> Yeni aya Gündem 2 olarak devredecek kararlar!
+    # Aradaki TÜM bloklar (blocks[1:-2]) yeni aya Gündem 2 altında birleştirilerek taşınacak!
     devredenler = blocks[1:-2] if len(blocks) > 3 else []
     if not devredenler and len(blocks) >= 1:
-        # Eğer önceki dosyada hiç yeni karar alınmamışsa yedek olarak Blok 0'ı göster
         devredenler = [blocks[0]]
 
     return {
@@ -181,17 +177,12 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
     """Orijinal Word dosyasının XML yapısını birebir koruyarak yeni ayın tutanağını üretir."""
     doc = docx.Document(io.BytesIO(file_bytes))
 
-    # 1. TABLO 0: Toplantı No ve Toplantı Tarihi Güncelleme
+    # 1. TABLO 0: Toplantı No ve Toplantı Tarihi
     t0 = doc.tables[0]
     set_tc_text_preserve_style(t0._tbl.tr_lst[0].tc_lst[1], f" {yeni_donem}", bold=True)
     set_tc_text_preserve_style(t0._tbl.tr_lst[0].tc_lst[3], f" {yeni_tarih_str}", bold=True)
 
-    # 2. TABLO 1: B. GÜNDEM MADDELERİ Güncelleme
-    # Satır 0 ve 1: Başlıklar
-    # Satır 2: 1. Açılış ve Yoklama,
-    # Satır 3: 2. Bir önceki kurulda alınmış kararların gözden geçirilmesi,
-    # Ara Satırlar: Yeni eklenen kararların konuları (3., 4. ...)
-    # Son 2 Satır: Gündeme alınması talep edilen konuların belirlenmesi, & Dilek ve Temenniler
+    # 2. TABLO 1: B. GÜNDEM MADDELERİ
     t1 = doc.tables[1]
     t1_trs = list(t1._tbl.tr_lst)
     agenda_row_template = copy.deepcopy(t1_trs[3])
@@ -201,20 +192,28 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
     for tr in t1_trs[4:]:
         t1._tbl.remove(tr)
 
+    # Gündem 2: Bir önceki kurulda alınmış kararların gözden geçirilmesi altındaki maddeler
+    # (Devreden her bir karar için B. Gündem Maddeleri tablosuna satır ekleniyor)
+    for dk in devreden_list:
+        new_tr = copy.deepcopy(agenda_row_template)
+        # Gündem 2 altında görünecek alt başlık veya ana konu
+        set_tc_text_preserve_style(new_tr.tc_lst[1], f"• {dk['konu']}", bold=False)
+        t1._tbl.append(new_tr)
+
+    # Yeni eklenen kararların gündem maddeleri
     for yk in yeni_kararlar_list:
         new_tr = copy.deepcopy(agenda_row_template)
-        konu_txt = yk["konu"].strip()
-        set_tc_text_preserve_style(new_tr.tc_lst[1], konu_txt, bold=False)
+        set_tc_text_preserve_style(new_tr.tc_lst[1], yk["konu"].strip(), bold=False)
         t1._tbl.append(new_tr)
 
     t1._tbl.append(closing_agenda_1)
     t1._tbl.append(closing_agenda_2)
 
-    # 3. TABLO 2: Karar 1 (Açılış ve Yoklama) Karar No Güncelleme
+    # 3. TABLO 2: Karar 1 (Açılış ve Yoklama)
     t2 = doc.tables[2]
     set_tc_text_preserve_style(t2._tbl.tr_lst[0].tc_lst[2], f"{yeni_donem}/001", bold=True)
 
-    # 4. TABLO 3: Karar 2 (Devreden), Yeni Kararlar (3, 4...) ve Kapanış Maddeleri
+    # 4. TABLO 3: Kararlar
     t3 = doc.tables[3]
     t3_trs = list(t3._tbl.tr_lst)
 
@@ -226,7 +225,6 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
     closing_block_1_rows = [copy.deepcopy(r) for r in t3_trs[-14:-7]]
     closing_block_2_rows = [copy.deepcopy(r) for r in t3_trs[-7:]]
 
-    # Tablo 3'teki tüm eski satırları temizle
     for tr in t3_trs:
         t3._tbl.remove(tr)
 
@@ -248,20 +246,27 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
         for r in rows:
             t3._tbl.append(r)
 
-    current_sira = 2
+    # Karar 2: Bir önceki kurulda alınmış kararların gözden geçirilmesi
+    # Geçen aydan devreden TÜM kararlar bu tek bir Karar 2 bloğunun altında (veya ayrı ayrı alt kararlar olarak) işleniyor.
+    # İstediğin gibi hepsi Gündem 2 başlığı altında toplanıyor:
+    devreden_ozet_metin = ""
+    for idx, dk in enumerate(devreden_list):
+        devreden_ozet_metin += f"• {dk['konu']}\n  Durum: {dk['durum']}\n  {dk['karar']}\n\n"
 
-    # Gündem 2 (Önceki aydan devreden kararlar)
-    for dk in devreden_list:
-        karar_no_str = f"{yeni_donem}/{current_sira:03d}"
-        konu_clean = re.sub(r'^Gündem\s*\d+\.\s*', '', dk["konu"].strip(), flags=re.IGNORECASE)
-        gundem_konu_str = f"Gündem {current_sira}. {konu_clean}"
-        lines = dk["karar"].split("\n")
-        append_decision_block(
-            current_sira, karar_no_str, gundem_konu_str,
-            dk["gerekce"], lines, dk["durum"], dk["termin"], dk["sorumlu"],
-            use_bullets=dk.get("use_bullets", len(lines) > 1)
-        )
-        current_sira += 1
+    karar2_no = f"{yeni_donem}/002"
+    append_decision_block(
+        sira_no=2,
+        karar_no_str=karar2_no,
+        gundem_konu_str="Gündem 2. Bir önceki kurulda alınmış kararların gözden geçirilmesi",
+        gerekce_str="Bir önceki İSG kurul toplantısında alınan kararların takibi, güncel durumlarının değerlendirilmesi ve sürekliliğinin sağlanması.",
+        karar_lines=devreden_ozet_metin.strip().split("\n"),
+        durum_str="Takip Ediliyor / Güncellendi",
+        termin_str="Sürekli",
+        sorumlu_str="İlgili Sorumlular",
+        use_bullets=True
+    )
+
+    current_sira = 3
 
     # Yeni Eklenen Kararlar (Gündem 3, 4...)
     for yk in yeni_kararlar_list:
@@ -298,13 +303,12 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
 
 # ================= STREAMLIT ARAYÜZÜ =================
 st.title("📋 İSG Kurul Tutanağı Otomasyonu")
-st.markdown("Önceki ayın `.docx` tutanağını yükleyin, **Yeni Kurul Tarihini** seçin ve yeni kararları ekleyin. Tablo yapısı, gri başlıklar ve hücre birleştirmeleri **%100 birebir korunarak** yeni tutanağınız hazırlanır.")
+st.markdown("Önceki ayın `.docx` tutanağını yükleyin, **Yeni Kurul Tarihini** seçin ve yeni kararları ekleyin.")
 
 uploaded_file = st.file_uploader("1️⃣ Önceki Ayın İSG Kurul Tutanağını Yükleyin (.docx)", type=["docx"])
 
 if uploaded_file is not None:
     file_bytes = uploaded_file.getvalue()
-    # Dosya değiştiyse session_state'i yenile
     if st.session_state.get("last_uploaded_name") != uploaded_file.name:
         parsed_data = parse_kurul_docx(file_bytes)
         st.session_state.last_uploaded_name = uploaded_file.name
@@ -313,7 +317,7 @@ if uploaded_file is not None:
         st.session_state.yeni_kararlar = []
 
     parsed = st.session_state.parsed_data
-    st.success(f"✅ Yüklendi: **{uploaded_file.name}** | Önceki Toplantı No: `{parsed['eski_no']}` | Önceki Tarih: `{parsed['eski_tarih_str']}`")
+    st.success(f"✅ Yüklendi: **{uploaded_file.name}** | Önceki Toplantı No: `{parsed['eski_no']}`")
 
     st.markdown("---")
     st.subheader("2️⃣ Yeni Kurul Tarihi ve Dönem Bilgisi")
@@ -330,23 +334,19 @@ if uploaded_file is not None:
     ay_ismi = AYLAR_TR.get(secilen_tarih.month, "")
 
     st.markdown("---")
-    st.subheader("3️⃣ Önceki Kuruldan Devreden Kararlar (Gündem 2'ye Taşınacak)")
-    st.caption("Önceki dosyadaki 'Karar 2' sistemden düşürüldü. Aşağıdaki karar(lar) önceki toplantıda alınan yeni kararlardır ve bu ay **Gündem 2** olarak yer alacaktır.")
+    st.subheader("3️⃣ Önceki Kuruldan Devreden Kararlar (Gündem 2 Altında Birleştirilecek)")
+    st.caption("Geçen ay alınan tüm kararlar bu ay tek bir çatı altında **Gündem 2 (Bir önceki kurulda alınmış kararların gözden geçirilmesi)** maddesinde toplanacaktır.")
 
     updated_devreden = []
     for idx, dk in enumerate(st.session_state.devreden_kararlar):
-        sira_preview = 2 + idx
-        with st.expander(f"📌 Gündem {sira_preview} ({yeni_donem}/{sira_preview:03d}): {dk['konu']}", expanded=True):
-            d_konu = st.text_input("Konu (Başındaki 'Gündem 2.' otomatik eklenir)", value=dk["konu"], key=f"dk_konu_{idx}")
-            d_gerekce = st.text_area("Gerekçe", value=dk["gerekce"], height=80, key=f"dk_ger_{idx}")
-            d_karar = st.text_area("Alınan Karar / Uygulama (Her satır ayrı paragraf/madde olur)", value=dk["karar"], height=160, key=f"dk_kar_{idx}")
-            c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
-            # Devreden kararın yeni aydaki varsayılan durumu:
-            default_durum = "Kurul Kararı Daireye İletildi" if dk["durum"] == "Uygulama sonucu bekleniyor." else dk["durum"]
-            d_durum = c1.text_input("Mevcut Durum", value=default_durum, key=f"dk_dur_{idx}")
-            d_termin = c2.text_input("Termin", value="" if default_durum == "Kurul Kararı Daireye İletildi" else dk["termin"], key=f"dk_ter_{idx}")
-            d_sorumlu = c3.text_input("Sorumlu Kişi", value="Üst İşveren / İşveren Vekili" if "Üst İşveren" in dk["sorumlu"] else dk["sorumlu"], key=f"dk_sor_{idx}")
-            d_bullets = c4.checkbox("Alt satırlar maddeli olsun", value=dk.get("use_bullets", True), key=f"dk_bul_{idx}")
+        with st.expander(f"📌 Devreden Karar: {dk['konu']}", expanded=True):
+            d_konu = st.text_input("Konu", value=dk["konu"], key=f"dk_konu_{idx}")
+            d_gerekce = st.text_area("Gerekçe", value=dk["gerekce"], height=70, key=f"dk_ger_{idx}")
+            d_karar = st.text_area("Alınan Karar / Uygulama", value=dk["karar"], height=120, key=f"dk_kar_{idx}")
+            c1, c2, c3 = st.columns(3)
+            d_durum = c1.text_input("Mevcut Durum", value="Kurul Kararı Daireye İletildi" if dk["durum"] == "Uygulama sonucu bekleniyor." else dk["durum"], key=f"dk_dur_{idx}")
+            d_termin = c2.text_input("Termin", value=dk["termin"], key=f"dk_ter_{idx}")
+            d_sorumlu = c3.text_input("Sorumlu Kişi", value=dk["sorumlu"], key=f"dk_sor_{idx}")
 
             updated_devreden.append({
                 "konu": d_konu,
@@ -354,56 +354,48 @@ if uploaded_file is not None:
                 "karar": d_karar,
                 "durum": d_durum,
                 "termin": d_termin,
-                "sorumlu": d_sorumlu,
-                "use_bullets": d_bullets
+                "sorumlu": d_sorumlu
             })
 
     st.markdown("---")
-    st.subheader("4️⃣ Yeni Karar Ekle (Gündem Maddeleri & C. Alınan Kararlar)")
-    st.caption("Buradan ekleyeceğiniz her karar hem **B. GÜNDEM MADDELERİ** tablosuna hem de **C. ALINAN KARARLAR** tablosuna otomatik numaralandırılarak eklenecektir.")
+    st.subheader("4️⃣ Yeni Karar Ekle (Gündem 3 ve Sonrasından Başlayacak)")
 
     with st.form("yeni_karar_ekle_form", clear_on_submit=True):
-        yk_konu = st.text_input("Yeni Karar Konusu (Örn: Yağışlı Havalarda Elektrik Tesisatı ve Ekipman Risklerinin Önlenmesi)")
-        yk_gerekce = st.text_area("Gerekçe", height=80)
-        yk_karar = st.text_area("Alınan Karar / Uygulama (İlk satır giriş cümlesi, alt satırlar maddeler halinde yazılabilir)", height=150)
-        fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 1])
+        yk_konu = st.text_input("Yeni Karar Konusu")
+        yk_gerekce = st.text_area("Gerekçe", height=70)
+        yk_karar = st.text_area("Alınan Karar / Uygulama", height=120)
+        fc1, fc2, fc3 = st.columns(3)
         yk_durum = fc1.text_input("Mevcut Durum", value="Uygulama sonucu bekleniyor.")
         yk_termin = fc2.text_input("Termin", value="İvedilikle")
         yk_sorumlu = fc3.text_input("Sorumlu Kişi", value="Üst İşveren")
-        yk_bullets = fc4.checkbox("Alt satırlar maddeli olsun", value=True)
 
         submitted = st.form_submit_button("➕ Yeni Kararı Listeye Ekle")
         if submitted:
-            if not yk_konu.strip():
-                st.warning("Lütfen en azından 'Yeni Karar Konusu' alanını doldurun.")
-            else:
+            if yk_konu.strip():
                 st.session_state.yeni_kararlar.append({
                     "konu": yk_konu.strip(),
                     "gerekce": yk_gerekce.strip(),
                     "karar": yk_karar.strip(),
                     "durum": yk_durum.strip(),
                     "termin": yk_termin.strip(),
-                    "sorumlu": yk_sorumlu.strip(),
-                    "use_bullets": yk_bullets
+                    "sorumlu": yk_sorumlu.strip()
                 })
                 st.rerun()
 
-    # Eklenen yeni kararları göster ve düzenleme/silme imkanı ver
     updated_yeni_kararlar = []
     if st.session_state.yeni_kararlar:
         st.markdown("#### Eklenen Yeni Kararlar:")
         for y_idx, yk in enumerate(st.session_state.yeni_kararlar):
-            sira_no = 2 + len(updated_devreden) + y_idx
+            sira_no = 3 + y_idx
             with st.expander(f"🆕 Gündem {sira_no} ({yeni_donem}/{sira_no:03d}): {yk['konu']}", expanded=True):
                 e_konu = st.text_input("Konu", value=yk["konu"], key=f"yk_konu_{y_idx}")
                 e_gerekce = st.text_area("Gerekçe", value=yk["gerekce"], height=70, key=f"yk_ger_{y_idx}")
-                e_karar = st.text_area("Alınan Karar / Uygulama", value=yk["karar"], height=130, key=f"yk_kar_{y_idx}")
-                ec1, ec2, ec3, ec4, ec5 = st.columns([2, 2, 2, 1, 1])
+                e_karar = st.text_area("Alınan Karar / Uygulama", value=yk["karar"], height=120, key=f"yk_kar_{y_idx}")
+                ec1, ec2, ec3, ec4 = st.columns([2, 2, 2, 1])
                 e_durum = ec1.text_input("Mevcut Durum", value=yk["durum"], key=f"yk_dur_{y_idx}")
                 e_termin = ec2.text_input("Termin", value=yk["termin"], key=f"yk_ter_{y_idx}")
                 e_sorumlu = ec3.text_input("Sorumlu Kişi", value=yk["sorumlu"], key=f"yk_sor_{y_idx}")
-                e_bullets = ec4.checkbox("Maddeli", value=yk.get("use_bullets", True), key=f"yk_bul_{y_idx}")
-                if ec5.button("🗑️ Sil", key=f"yk_del_{y_idx}"):
+                if ec4.button("🗑️ Sil", key=f"yk_del_{y_idx}"):
                     st.session_state.yeni_kararlar.pop(y_idx)
                     st.rerun()
 
@@ -413,31 +405,10 @@ if uploaded_file is not None:
                     "karar": e_karar,
                     "durum": e_durum,
                     "termin": e_termin,
-                    "sorumlu": e_sorumlu,
-                    "use_bullets": e_bullets
+                    "sorumlu": e_sorumlu
                 })
-    else:
-        st.info("Henüz yeni bir karar eklemediniz. Yukarıdaki formu kullanarak yeni karar ekleyebilirsiniz.")
-
-    # B. GÜNDEM MADDELERİ ÖNİZLEMESİ
-    st.markdown("---")
-    st.subheader("5️⃣ B. Gündem Maddeleri ve Karar Numaraları Önizlemesi")
-    gundem_preview = [
-        f"1. Açılış ve Yoklama, -> ({yeni_donem}/001)",
-        f"2. Bir önceki kurulda alınmış kararların gözden geçirilmesi, -> ({yeni_donem}/002)"
-    ]
-    next_num = 3
-    for yk in updated_yeni_kararlar:
-        gundem_preview.append(f"{next_num}. {yk['konu']} -> ({yeni_donem}/{next_num:03d})")
-        next_num += 1
-    gundem_preview.append(f"{next_num}. Gündeme alınması talep edilen konuların belirlenmesi, -> ({yeni_donem}/{next_num:03d})")
-    gundem_preview.append(f"{next_num+1}. Dilek ve Temenniler -> ({yeni_donem}/{next_num+1:03d})")
-
-    for gp in gundem_preview:
-        st.write(f"• {gp}")
 
     st.markdown("---")
-    # Doğrudan belgeyi oluşturup indirme butonunu aktif sunuyoruz
     output_docx = build_updated_kurul_docx(
         file_bytes,
         yeni_donem.strip(),
