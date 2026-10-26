@@ -184,8 +184,6 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
     for tr in t1_trs[4:]:
         t1._tbl.remove(tr)
 
-    # DÜZELTME 2: Devreden kararlar B. Gündem Maddeleri listesinde tekrar geçmeyecek, 
-    # sadece yeni eklenen kararlar araya eklenecek.
     for yk in yeni_kararlar_list:
         new_tr = copy.deepcopy(agenda_row_template)
         set_tc_text_preserve_style(new_tr.tc_lst[1], yk["konu"].strip(), bold=False)
@@ -231,23 +229,33 @@ def build_updated_kurul_docx(file_bytes, yeni_donem, yeni_tarih_str, devreden_li
         for r in rows:
             t3._tbl.append(r)
 
-    current_sira = 2
-
-    # DÜZELTME 1: Geçen aydan devreden her bir karar, aşağıda C. Alınan Kararlar kısmında 
-    # ayrı ayrı Karar 2, Karar 3... olarak kendi eski gündem başlıklarıyla eklenecek.
+    # TÜM GEÇEN AY KARARLARI GÜNDEM 2 ÇATISI ALTINDA BİRLEŞTİRİLİYOR (KARAR 2)
+    devreden_ozet_parcalar = []
+    devreden_gerekce_birlestir = []
     for dk in devreden_list:
-        karar_no_str = f"{yeni_donem}/{current_sira:03d}"
-        konu_clean = re.sub(r'^Gündem\s*\d+\.\s*', '', dk["konu"].strip(), flags=re.IGNORECASE)
-        gundem_konu_str = f"Gündem {current_sira}. {konu_clean}"
-        lines = dk["karar"].split("\n")
-        append_decision_block(
-            current_sira, karar_no_str, gundem_konu_str,
-            dk["gerekce"], lines, dk["durum"], dk["termin"], dk["sorumlu"],
-            use_bullets=dk.get("use_bullets", len(lines) > 1)
-        )
-        current_sira += 1
+        devreden_ozet_parcalar.append(f"• Konu: {dk['konu']}\n  Durum: {dk['durum']}\n  Detay: {dk['karar']}")
+        if dk['gerekce']:
+            devreden_gerekce_birlestir.append(dk['gerekce'])
 
-    # Yeni Eklenen Kararlar (Devredenlerden sonraki numaradan devam edecek)
+    birlestirilmis_karar_metni = "\n\n".join(devreden_ozet_parcalar)
+    birlestirilmis_gerekce = " ".join(devreden_gerekce_birlestir) if devreden_gerekce_birlestir else "Bir önceki İSG kurul toplantısında alınan kararların takibi ve gözden geçirilmesi."
+
+    karar2_no = f"{yeni_donem}/002"
+    append_decision_block(
+        sira_no=2,
+        karar_no_str=karar2_no,
+        gundem_konu_str="Gündem 2. Bir önceki kurulda alınmış kararların gözden geçirilmesi",
+        gerekce_str=birlestirilmis_gerekce,
+        karar_lines=birlestirilmis_karar_metni.split("\n"),
+        durum_str="Gözden Geçirildi / Takip Ediliyor",
+        termin_str="Sürekli",
+        sorumlu_str="İlgili Sorumlular",
+        use_bullets=True
+    )
+
+    current_sira = 3
+
+    # Yeni Eklenen Kararlar Gündem 3 ve sonrasından başlar
     for yk in yeni_kararlar_list:
         karar_no_str = f"{yeni_donem}/{current_sira:03d}"
         konu_clean = re.sub(r'^Gündem\s*\d+\.\s*', '', yk["konu"].strip(), flags=re.IGNORECASE)
@@ -313,17 +321,32 @@ if uploaded_file is not None:
     ay_ismi = AYLAR_TR.get(secilen_tarih.month, "")
 
     st.markdown("---")
-    st.subheader("3️⃣ Önceki Kuruldan Devreden Kararlar (Gözden Geçirilecek)")
-    st.caption("Geçen ay alınan bu kararlar yeni ayda C. Alınan Kararlar kısmında ayrı ayrı gözden geçirme maddeleri olarak yer alacaktır.")
+    st.subheader("3️⃣ Önceki Kuruldan Devreden Kararlar (Gündem 2 Altında Birleştirilecek)")
+    st.markdown("""
+    > ⚠️ **Not:** Geçen ay alınan tüm kararlar yeni ayda **Gündem 2 (Bir önceki kurulda alınmış kararların gözden geçirilmesi)** maddesi altında tek bir karar olarak birleştirilecektir. Lütfen mevcut durumlarını güncelleyin!
+    """)
+
+    # Değiştirilmemiş durum kontrolü için uyarı bayrağı
+    uyari_goster = False
 
     updated_devreden = []
     for idx, dk in enumerate(st.session_state.devreden_kararlar):
-        with st.expander(f"📌 Devreden Karar: {dk['konu']}", expanded=True):
+        with st.expander(f"📌 Geçen Ayın Kararı: {dk['konu']}", expanded=True):
             d_konu = st.text_input("Konu", value=dk["konu"], key=f"dk_konu_{idx}")
             d_gerekce = st.text_area("Gerekçe", value=dk["gerekce"], height=70, key=f"dk_ger_{idx}")
             d_karar = st.text_area("Alınan Karar / Uygulama", value=dk["karar"], height=120, key=f"dk_kar_{idx}")
+            
             c1, c2, c3 = st.columns(3)
-            d_durum = c1.text_input("Mevcut Durum", value="Kurul Kararı Daireye İletildi" if dk["durum"] == "Uygulama sonucu bekleniyor." else dk["durum"], key=f"dk_dur_{idx}")
+            
+            # DİKKAT ÇEKİCİ KIRMIZI ÇERÇEVE ALANI İÇİN ÖZEL UYARI KUTUSU
+            st.markdown("🔴 **Mevcut Durum (Güncellemeniz Gerekiyor):**")
+            default_durum_val = "Kurul Kararı Daireye İletildi" if dk["durum"] == "Uygulama sonucu bekleniyor." else dk["durum"]
+            d_durum = c1.text_input("Mevcut Durum", value=default_durum_val, key=f"dk_dur_{idx}")
+            
+            # Eğer kullanıcı mevcut durumu "Uygulama sonucu bekleniyor." olarak bırakmışsa uyarı verelim
+            if d_durum.strip() == "Uygulama sonucu bekleniyor.":
+                uyari_goster = True
+
             d_termin = c2.text_input("Termin", value=dk["termin"], key=f"dk_ter_{idx}")
             d_sorumlu = c3.text_input("Sorumlu Kişi", value=dk["sorumlu"], key=f"dk_sor_{idx}")
 
@@ -336,8 +359,11 @@ if uploaded_file is not None:
                 "sorumlu": d_sorumlu
             })
 
+    if uyari_goster:
+        st.error("🚨 **DİKKAT:** Geçen ayki kararların bazıフラン/Mevcut Durum kısımları 'Uygulama sonucu bekleniyor.' olarak kalmış! Düzeltilmeden onay verilirse bu şekilde işlenecek. Değiştirmek ister misiniz?")
+
     st.markdown("---")
-    st.subheader("4️⃣ Yeni Karar Ekle")
+    st.subheader("4️⃣ Yeni Karar Ekle (Gündem 3 ve Sonrasından Başlayacak)")
 
     with st.form("yeni_karar_ekle_form", clear_on_submit=True):
         yk_konu = st.text_input("Yeni Karar Konusu")
@@ -365,7 +391,7 @@ if uploaded_file is not None:
     if st.session_state.yeni_kararlar:
         st.markdown("#### Eklenen Yeni Kararlar:")
         for y_idx, yk in enumerate(st.session_state.yeni_kararlar):
-            sira_no = 2 + len(updated_devreden) + y_idx
+            sira_no = 3 + y_idx
             with st.expander(f"🆕 Gündem {sira_no} ({yeni_donem}/{sira_no:03d}): {yk['konu']}", expanded=True):
                 e_konu = st.text_input("Konu", value=yk["konu"], key=f"yk_konu_{y_idx}")
                 e_gerekce = st.text_area("Gerekçe", value=yk["gerekce"], height=70, key=f"yk_ger_{y_idx}")
